@@ -1,11 +1,11 @@
-function createElement(type, props, ...children) {
+export function createElement(type, props, ...children) {
 	return {
 		type,
 		props: {
-			props,
-			children: children.map((child) => {
-				typeof child === "object" ? child : createTextElement(child);
-			}),
+			...props,
+			children: children.map((child) =>
+				typeof child === "object" ? child : createTextElement(child)
+			),
 		},
 	};
 }
@@ -15,7 +15,7 @@ function createElement(type, props, ...children) {
  * @param {*} child
  * @returns
  */
-function createTextElement(child) {
+function createTextElement(text) {
 	return {
 		type: "TEXT_ELEMENT",
 		props: {
@@ -24,9 +24,4 @@ function createTextElement(child) {
 		},
 	};
 }
-
-const Didact = {
-	createElement,
-};
-export { Didact };
 
