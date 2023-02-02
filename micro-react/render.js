@@ -1,9 +1,6 @@
 export function createDom(fiber) {
 	// 创建父节点
-	const dom =
-		fiber.type == "TEXT_ELEMENT"
-			? document.createTextNode("")
-			: document.createElement(fiber.type);
+	const dom = fiber.type == "TEXT_ELEMENT" ? document.createTextNode("") : document.createElement(fiber.type);
 
 	// 赋值属性
 	Object.keys(fiber.props)
@@ -46,13 +43,13 @@ function performUnitOfWork(fiber) {
 	// add dom node
 	if (!fiber.dom) fiber.dom = createDom(fiber);
 
-	if (!fiber.parent) fiber.parent.dom.appendChild(fiber.dom);
+	if (fiber.parent) fiber.parent.dom.appendChild(fiber.dom);
 
 	// create new fibers
 	const elements = fiber.props.children;
 	let prevSibling = null;
 
-	for (let i = 0; i < elements.length; i++) {
+	for (let index = 0; index < elements.length; index++) {
 		const element = elements[index];
 
 		const newFiber = {
@@ -82,3 +79,5 @@ function performUnitOfWork(fiber) {
 		nextFiber = nextFiber.parent;
 	}
 }
+
+export { render };
