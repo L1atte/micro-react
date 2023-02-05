@@ -1,4 +1,4 @@
-export function createDom(fiber) {
+function createDom(fiber) {
 	// 创建父节点
 	const dom = fiber.type == "TEXT_ELEMENT" ? document.createTextNode("") : document.createElement(fiber.type);
 
@@ -10,16 +10,38 @@ export function createDom(fiber) {
 	return dom;
 }
 
+// 渲染 Root
+// Commit Phase
+function commitRoot() {
+	commitWork(wipRoot.child);
+	wipRoot = null;
+}
+
+function commitWork(fiber) {
+	if (!fiber) {
+		return;
+	}
+	const domParent = fiber.parent.dom;
+	domParent.appendChild(fiber.dom);
+	commitWork(fiber.child);
+	commitWork(fiber.sibling);
+}
+
+// 开始渲染
 function render(element, container) {
-	// set next unit of work
-	nextUnitOfWork = {
+	// 追踪 root 节点的 fiber tree，称之为 work in progress
+	wipRoot = {
 		dom: container,
 		props: {
 			children: [element],
 		},
+		child: null,
 	};
+	// set next unit of work
+	nextUnitOfWork = wipRoot;
 }
 
+let wipRoot = null;
 let nextUnitOfWork = null;
 
 // 调度函数
@@ -32,6 +54,11 @@ function workLoop(deadline) {
 		shouldYield = deadline.timeRemaining() < 1;
 	}
 
+	// 如果没有 nextUnitOfWork ，则进入 Commit 阶段
+	if (!nextUnitOfWork && wipRoot) {
+		commitRoot();
+	}
+
 	// 没有剩余时间，退出循环。将工作交给 requestIdleCallback 调度
 	requestIdleCallback(workLoop);
 }
@@ -42,8 +69,6 @@ requestIdleCallback(workLoop);
 function performUnitOfWork(fiber) {
 	// add dom node
 	if (!fiber.dom) fiber.dom = createDom(fiber);
-
-	if (fiber.parent) fiber.parent.dom.appendChild(fiber.dom);
 
 	// create new fibers
 	const elements = fiber.props.children;
