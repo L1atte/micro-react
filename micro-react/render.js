@@ -10,10 +10,31 @@ function createDom(fiber) {
 	return dom;
 }
 
+// 开始渲染
+function render(element, container) {
+	// root 节点的 fiber，称之为 work in progress
+	wipRoot = {
+		dom: container,
+		props: {
+			children: [element],
+		},
+		parent: null,
+		child: null,
+		sibling: null,
+		alternate: currentRoot,
+	};
+	deletions = [];
+	// set next unit of work
+	nextUnitOfWork = wipRoot;
+}
+
 // 渲染 Root
 // Commit Phase
 function commitRoot() {
+	deletions.forEach(item => commitWork(item));
 	commitWork(wipRoot.child);
+	// commit完成后，把wipRoot变为currentRoot
+	currentRoot = wipRoot;
 	wipRoot = null;
 }
 
@@ -22,31 +43,71 @@ function commitWork(fiber) {
 		return;
 	}
 	const domParent = fiber.parent.dom;
-	domParent.appendChild(fiber.dom);
+
+	if (fiber.dom && fiber.effectTag === "PLACEMENT") {
+		domParent.append(fiber.dom);
+	} else if (fiber.dom && fiber.effectTag === "DELETION") {
+		domParent.removeChild(fiber.dom);
+	} else if (fiber.dom && fiber.effectTag === "UPDATE") {
+		updateDom(fiber.dom, fiber.alternate.props, fiber.props);
+	}
+
 	commitWork(fiber.child);
 	commitWork(fiber.sibling);
 }
 
-// 开始渲染
-function render(element, container) {
-	// 追踪 root 节点的 fiber tree，称之为 work in progress
-	wipRoot = {
-		dom: container,
-		props: {
-			children: [element],
-		},
-		child: null,
-	};
-	// set next unit of work
-	nextUnitOfWork = wipRoot;
+function updateDom(dom, prevProps, nextProps) {
+	const isEvent = key => key.startsWith("on");
+	// 删除已经没有的props
+	Object.keys(prevProps)
+		.filter(key => key != "children" && !isEvent(key))
+		// 不在nextProps中
+		.filter(key => !key in nextProps)
+		.forEach(key => {
+			// 清空属性
+			dom[key] = "";
+		});
+
+	// 添加新增的属性/修改变化的属性
+	Object.keys(nextProps)
+		.filter(key => key !== "children" && !isEvent(key))
+		// 不再prevProps中
+		.filter(key => !key in prevProps || prevProps[key] !== nextProps[key])
+		.forEach(key => {
+			dom[key] = nextProps[key];
+		});
+
+	// 删除事件处理函数
+	Object.keys(prevProps)
+		.filter(isEvent)
+		// 新的属性没有，或者有变化
+		.filter(key => !key in nextProps || prevProps[key] !== nextProps[key])
+		.forEach(key => {
+			const eventType = key.toLowerCase().substring(2);
+			dom.removeEventListener(eventType, prevProps[key]);
+		});
+
+	// 添加新的事件处理函数
+	Object.keys(nextProps)
+		.filter(isEvent)
+		.filter(key => prevProps[key] !== nextProps[key])
+		.forEach(key => {
+			const eventType = key.toLowerCase().substring(2);
+			dom.addEventListener(eventType, nextProps[key]);
+		});
 }
 
-let wipRoot = null;
 let nextUnitOfWork = null;
+// 正在进行的渲染
+let wipRoot = null;
+// 上次渲染
+let currentRoot = null;
+// 要删除的fiber
+let deletions = null;
 
 // 调度函数
 function workLoop(deadline) {
-	// 是否退出
+	// shouldYield 表示线程繁忙，应该中断渲染
 	let shouldYield = false;
 
 	while (nextUnitOfWork && !shouldYield) {
@@ -66,32 +127,13 @@ function workLoop(deadline) {
 // 第一次请求
 requestIdleCallback(workLoop);
 
+// 执行一个渲染任务单元，并返回新的任务
 function performUnitOfWork(fiber) {
 	// add dom node
 	if (!fiber.dom) fiber.dom = createDom(fiber);
 
-	// create new fibers
-	const elements = fiber.props.children;
-	let prevSibling = null;
-
-	for (let index = 0; index < elements.length; index++) {
-		const element = elements[index];
-
-		const newFiber = {
-			type: element.type,
-			props: element.props,
-			parent: fiber,
-			dom: null,
-		};
-
-		if (index === 0) {
-			fiber.child = newFiber;
-		} else {
-			prevSibling.sibling = newFiber;
-		}
-
-		prevSibling = newFiber;
-	}
+	// 新建 newFiber，构建 fiber tree
+	reconcileChildren(fiber, fiber.props.children);
 
 	if (fiber.child) {
 		return fiber.child;
@@ -102,6 +144,71 @@ function performUnitOfWork(fiber) {
 			return nextFiber.sibling;
 		}
 		nextFiber = nextFiber.parent;
+	}
+}
+
+// 同时迭代旧的 fiber（即 wipFiber.alternate）和新 elements（即我们希望渲染到 dom 的元素）
+// elements 此时还不是 Fiber 结构
+function reconcileChildren(wipFiber, elements) {
+	let index = 0;
+	let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
+	let prevSibling = null;
+
+	while (index < elements.length || oldFiber != null) {
+		const element = elements[index];
+		let newFiber = null;
+
+		const sameType = oldFiber && element && oldFiber.type === element.type;
+
+		// 更新
+		// 保持旧 dom 节点引用，然后通过 props 更新
+		if (sameType) {
+			newFiber = {
+				type: oldFiber.type,
+				props: element.props,
+				dom: oldFiber.dom, // 保持旧 dom 引用
+				parent: wipFiber,
+				child: null,
+				sibling: null,
+				alternate: oldFiber,
+				effectTag: "UPDATE",
+			};
+		}
+
+		// 创建
+		if (element && !sameType) {
+			newFiber = {
+				type: element.type,
+				props: element.props,
+				dom: null,
+				parent: wipFiber,
+				child: null,
+				sibling: null,
+				alternate: null,
+				effectTag: "PLACEMENT",
+			};
+		}
+
+		// 删除
+		if (oldFiber && !sameType) {
+			oldFiber.effectTag = "DELETION";
+			deletions.push(oldFiber);
+		}
+
+		// 遍历 fiber
+		// 因为 fiber 只有一个 child 节点，其余 child 节点被视作 child 节点的 sibling 节点。
+		// 因此这样遍历
+		if (oldFiber) oldFiber = oldFiber.sibling;
+
+		// 第一个child才可以作为child，其他的就是sibling
+		if (index === 0) {
+			wipFiber.child = newFiber;
+		} else {
+			prevSibling.sibling = newFiber;
+		}
+
+		prevSibling = newFiber;
+		index++;
 	}
 }
 

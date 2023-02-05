@@ -3,9 +3,7 @@ export function createElement(type, props, ...children) {
 		type,
 		props: {
 			...props,
-			children: children.map((child) =>
-				typeof child === "object" ? child : createTextElement(child)
-			),
+			children: children.map(child => (typeof child === "object" ? child : createTextElement(child))),
 		},
 	};
 }
@@ -24,4 +22,3 @@ function createTextElement(text) {
 		},
 	};
 }
-

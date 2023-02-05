@@ -1,13 +1,26 @@
 import { Didact } from "./micro-react/index.js";
-
 const { createElement, render } = Didact;
-const element = createElement(
-	"h1",
-	{ id: "title" },
-	"Hello React",
-	createElement("a", { href: "https://bilibili.com" }, "Click Me!")
-);
+
+const handleChange = e => {
+	renderer(e.target.value);
+};
 
 const container = document.querySelector("#root");
 
-render(element, container);
+const renderer = value => {
+	const element = createElement(
+		"div",
+		null,
+		createElement("input", {
+			value: value,
+			oninput: e => {
+				handleChange(e);
+			},
+		}),
+		createElement("h2", null, value),
+	);
+
+	render(element, container);
+};
+
+renderer("Hello");
