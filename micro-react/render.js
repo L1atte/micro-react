@@ -11,6 +11,7 @@ function createDom(fiber) {
 }
 
 // 开始渲染
+// render 接收 createElement() 创建的 js 对象
 function render(element, container) {
 	// root 节点的 fiber，称之为 work in progress
 	wipRoot = {
@@ -42,18 +43,32 @@ function commitWork(fiber) {
 	if (!fiber) {
 		return;
 	}
-	const domParent = fiber.parent.dom;
+
+	// 由于函数式组件没有 dom 的原因，所以需要不断向上遍历找到含有 dom 的 fiber
+	let domParentFiber = fiber.parent;
+	while (!domParentFiber.dom) {
+		domParentFiber = domParentFiber.parent;
+	}
+	const domParent = domParentFiber.dom;
 
 	if (fiber.dom && fiber.effectTag === "PLACEMENT") {
 		domParent.append(fiber.dom);
 	} else if (fiber.dom && fiber.effectTag === "DELETION") {
-		domParent.removeChild(fiber.dom);
+		commitDeletion(fiber, domParent);
 	} else if (fiber.dom && fiber.effectTag === "UPDATE") {
 		updateDom(fiber.dom, fiber.alternate.props, fiber.props);
 	}
 
 	commitWork(fiber.child);
 	commitWork(fiber.sibling);
+}
+
+function commitDeletion(fiber, domParent) {
+	if (fiber.dom) {
+		domParent.removeChild(fiber.dom);
+	} else {
+		commitDeletion(fiber.child, domParent);
+	}
 }
 
 function updateDom(dom, prevProps, nextProps) {
@@ -129,11 +144,9 @@ requestIdleCallback(workLoop);
 
 // 执行一个渲染任务单元，并返回新的任务
 function performUnitOfWork(fiber) {
-	// add dom node
-	if (!fiber.dom) fiber.dom = createDom(fiber);
-
-	// 新建 newFiber，构建 fiber tree
-	reconcileChildren(fiber, fiber.props.children);
+	const isFunctionComponent = fiber.type instanceof Function;
+	if (isFunctionComponent) updateFunctionComponent(fiber);
+	else updateHostComponent(fiber);
 
 	if (fiber.child) {
 		return fiber.child;
@@ -145,6 +158,22 @@ function performUnitOfWork(fiber) {
 		}
 		nextFiber = nextFiber.parent;
 	}
+}
+
+function updateFunctionComponent(fiber) {
+	// 这里 fiber.type 是一个函数
+	const children = [fiber.type(fiber.props)];
+
+	// 新建 newFiber，构建 fiber tree
+	reconcileChildren(fiber, children);
+}
+
+function updateHostComponent(fiber) {
+	// add dom node
+	if (!fiber.dom) fiber.dom = createDom(fiber);
+
+	// 新建 newFiber，构建 fiber tree
+	reconcileChildren(fiber, fiber.props.children);
 }
 
 // 同时迭代旧的 fiber（即 wipFiber.alternate）和新 elements（即我们希望渲染到 dom 的元素）
