@@ -160,12 +160,51 @@ function performUnitOfWork(fiber) {
 	}
 }
 
+let wipFiber = null;
+let hookIndex = null;
+
 function updateFunctionComponent(fiber) {
+	wipFiber = fiber;
+	hookIndex = 0;
+	wipFiber.hooks = []; // 因为 wipFiber 和 fiber 引用相同，所以 hooks 也添加进 fiber
+
 	// 这里 fiber.type 是一个函数
 	const children = [fiber.type(fiber.props)];
 
 	// 新建 newFiber，构建 fiber tree
 	reconcileChildren(fiber, children);
+}
+
+function useState(initial) {
+	const oldHook = wipFiber.alternate && wipFiber.alternate.hooks && wipFiber.alternate.hooks[hookIndex];
+
+	const hook = {
+		state: oldHook ? oldHook.state : initial,
+		queue: [],
+	};
+
+	// 取出上次 hook 里的 setState action，一个接一个的执行
+	const actions = oldHook ? oldHook.queue : [];
+	actions.forEach(action => {
+		hook.state = action(hook.state);
+	});
+
+	const setState = action => {
+		hook.queue.push(action);
+
+		// 这里执行与 render 函数相同的内容，表示执行 setState 之后触发渲染阶段
+		wipRoot = {
+			dom: currentRoot.dom,
+			props: currentRoot.props,
+			alternate: currentRoot,
+		};
+		nextUnitOfWork = wipRoot;
+		deletions = [];
+	};
+
+	wipFiber.hooks.push(hook);
+	hookIndex++;
+	return [hook.state, setState];
 }
 
 function updateHostComponent(fiber) {
@@ -241,4 +280,4 @@ function reconcileChildren(wipFiber, elements) {
 	}
 }
 
-export { render };
+export { render, useState };
