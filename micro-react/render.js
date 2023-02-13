@@ -1,3 +1,4 @@
+// 根据 fiber 结构生成 dom 节点
 function createDom(fiber) {
 	// 创建父节点
 	const dom = fiber.type == "TEXT_ELEMENT" ? document.createTextNode("") : document.createElement(fiber.type);
